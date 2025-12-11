@@ -1,16 +1,21 @@
 package com.message.message_service.event;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class MessageDeliveredEvent {
 
     private Long messageId;
+    private Long senderId;
     private Long receiverId;
-    private boolean isDelivered;
-    private LocalDateTime deliveredAt;
+    private boolean delivered;
+    private Instant deliveredAt;
 
     public Long getMessageId() {
         return messageId;
@@ -18,6 +23,14 @@ public class MessageDeliveredEvent {
 
     public void setMessageId(Long messageId) {
         this.messageId = messageId;
+    }
+
+    public Long getSenderId() {
+        return senderId;
+    }
+
+    public void setSenderId(Long senderId) {
+        this.senderId = senderId;
     }
 
     public Long getReceiverId() {
@@ -29,18 +42,18 @@ public class MessageDeliveredEvent {
     }
 
     public boolean isDelivered() {
-        return isDelivered;
+        return delivered;
     }
 
     public void setDelivered(boolean delivered) {
-        isDelivered = delivered;
+        this.delivered = delivered;
     }
 
-    public LocalDateTime getDeliveredAt() {
+    public Instant getDeliveredAt() {
         return deliveredAt;
     }
 
-    public void setDeliveredAt(LocalDateTime deliveredAt) {
+    public void setDeliveredAt(Instant deliveredAt) {
         this.deliveredAt = deliveredAt;
     }
 }

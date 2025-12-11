@@ -1,0 +1,120 @@
+<div class="chat-container">
+  <!-- Navbar -->
+  <nav class="navbar navbar-dark bg-primary sticky-top">
+    <div class="container-fluid">
+      <span class="navbar-brand mb-0 h1">
+        <i class="fas fa-comments me-2"></i>Chat Application
+      </span>
+      <div class="d-flex align-items-center">
+        <span class="text-white me-3">{{ getUserDisplayName() }}</span>
+        <button class="btn btn-outline-light btn-sm" (click)="logout()">
+          <i class="fas fa-sign-out-alt me-2"></i>Logout
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="chat-main">
+    <!-- Conversations List -->
+    <div class="conversations-panel">
+      <div class="conversations-header">
+        <h5 class="mb-0">Messages</h5>
+        <button class="btn btn-sm btn-primary" (click)="loadConversations()">
+          <i class="fas fa-sync"></i>
+        </button>
+      </div>
+
+      <div class="conversations-list">
+        <div *ngIf="loading" class="text-center p-3">
+          <div class="spinner-border spinner-border-sm text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+
+        <div
+          *ngFor="let conversation of conversations"
+          class="conversation-item"
+          [class.active]="selectedConversation?.id === conversation.id"
+          (click)="selectConversation(conversation)"
+        >
+          <div class="conversation-header">
+            <h6 class="mb-0">{{ conversation.participantName }}</h6>
+            <small class="text-muted">
+              {{ conversation.lastMessageTime | date: 'short' }}
+            </small>
+          </div>
+          <p class="mb-0 text-truncate">{{ conversation.lastMessage }}</p>
+          <div *ngIf="conversation.unreadCount > 0" class="badge bg-primary rounded-pill">
+            {{ conversation.unreadCount }}
+          </div>
+        </div>
+
+        <div *ngIf="conversations.length === 0" class="text-center p-3 text-muted">
+          <p>No conversations yet</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat Messages Area -->
+    <div class="chat-panel">
+      <div *ngIf="!selectedConversation" class="empty-state">
+        <div class="text-center">
+          <i class="fas fa-comments fa-3x text-muted mb-3"></i>
+          <p class="text-muted">Select a conversation to start chatting</p>
+        </div>
+      </div>
+
+      <div *ngIf="selectedConversation" class="d-flex flex-column h-100">
+        <!-- Chat Header -->
+        <div class="chat-header border-bottom">
+          <h6 class="mb-0">{{ selectedConversation.participantName }}</h6>
+          <small class="text-muted">Online</small>
+        </div>
+
+        <!-- Messages Container -->
+        <div class="messages-container" #messagesContainer>
+          <div *ngFor="let message of messages" class="message-row" [class.sent]="isSender(message)">
+            <div class="message-group">
+              <div class="message-bubble" [class.sent]="isSender(message)">
+                <p class="message-text">{{ message.content }}</p>
+                <div class="message-footer">
+                  <small class="message-time">
+                    {{ message.timestamp | date: 'short' }}
+                  </small>
+                  <i
+                    *ngIf="isSender(message)"
+                    class="fas"
+                    [ngClass]="getStatusIcon(message.status)"
+                    [ngClass]="getStatusClass(message.status)"
+                    title="{{ message.status }}"
+                  ></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Message Input -->
+        <div class="chat-footer border-top">
+          <div class="input-group">
+            <textarea
+              class="form-control"
+              placeholder="Type a message..."
+              [(ngModel)]="messageText"
+              (keypress)="onKeyPress($event)"
+              rows="2"
+            ></textarea>
+            <button
+              class="btn btn-primary"
+              type="button"
+              (click)="sendMessage()"
+              [disabled]="!messageText.trim()"
+            >
+              <i class="fas fa-paper-plane"></i> Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

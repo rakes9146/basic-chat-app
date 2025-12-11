@@ -23,24 +23,45 @@ public class UserChannelInterceptor implements ChannelInterceptor {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         
         if (accessor != null) {
-            log.debug("[CHANNEL-INTERCEPTOR] Processing command: {}", accessor.getCommand());
+            log.info("[CHANNEL-INTERCEPTOR] 🔄 Processing command: {}", accessor.getCommand());
             
             if (StompCommand.CONNECT.equals(accessor.getCommand())) {
                 log.info("[CHANNEL-INTERCEPTOR] 🔌 CONNECT frame received");
                 log.info("[CHANNEL-INTERCEPTOR] All native headers: {}", accessor.toNativeHeaderMap());
+                log.info("[CHANNEL-INTERCEPTOR] Session attributes: {}", accessor.getSessionAttributes());
                 
+                // Try to get userId from native headers first
                 String userId = accessor.getFirstNativeHeader("userId");
+                log.info("[CHANNEL-INTERCEPTOR] UserId from native header: {}", userId);
                 
-                if (userId != null && !userId.isEmpty()) {
-                    Principal principal = () -> userId;
+                // If not in native headers, try session attributes (from handshake)
+                if ((userId == null || userId.isEmpty()) && accessor.getSessionAttributes() != null) {
+                    Object userIdFromSession = accessor.getSessionAttributes().get("userId");
+                    if (userIdFromSession != null) {
+                        userId = userIdFromSession.toString();
+                        log.info("[CHANNEL-INTERCEPTOR] UserId from session attributes: {}", userId);
+                    }
+                }
+                
+                final String finalUserId = userId;
+                
+                if (finalUserId != null && !finalUserId.isEmpty()) {
+                    Principal principal = () -> finalUserId;
                     accessor.setUser(principal);
-                    log.info("[CHANNEL-INTERCEPTOR] ✅ Set principal for user: {}", userId);
-                    log.info("[CHANNEL-INTERCEPTOR] Principal name: {}", accessor.getUser().getName());
+                    log.info("[CHANNEL-INTERCEPTOR] ✅ Set principal for user: {}", finalUserId);
+                    
+                    if (accessor.getUser() != null) {
+                        log.info("[CHANNEL-INTERCEPTOR] ✅ Principal confirmed - name: {}", accessor.getUser().getName());
+                    } else {
+                        log.error("[CHANNEL-INTERCEPTOR] ❌ Principal is null after setting!");
+                    }
                 } else {
-                    log.error("[CHANNEL-INTERCEPTOR] ❌ No userId in CONNECT headers!");
+                    log.error("[CHANNEL-INTERCEPTOR] ❌ No userId found in headers or session!");
                 }
             } else if (accessor.getUser() != null) {
                 log.debug("[CHANNEL-INTERCEPTOR] Command {} has user: {}", accessor.getCommand(), accessor.getUser().getName());
+            } else {
+                log.warn("[CHANNEL-INTERCEPTOR] ⚠️ Command {} has NO user principal!", accessor.getCommand());
             }
         }
         

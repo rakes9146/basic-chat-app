@@ -87,7 +87,7 @@
           try { const body = JSON.parse(payload.body || payload); logMessage('<strong>Public</strong>: ' + JSON.stringify(body)); } catch(e) { logMessage('<strong>Public</strong>: ' + payload.body); }
         });
 
-        // publish presence online
+        // publish presence online so presence consumer can mark user online
         stompClient.send('/app/presence', {}, JSON.stringify({ userId: parseInt(userId), online: true }));
       }, function(error) {
         document.getElementById('status').innerText = 'Connection error';
