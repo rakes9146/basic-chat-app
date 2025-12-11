@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Chat Service STOMP Test Client</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #messages { border: 1px solid #ddd; padding: 10px; height: 300px; overflow: auto; }
+    .msg { margin-bottom: 8px; }
+    .meta { font-size: 0.85em; color: #666; }
+  </style>
+</head>
+<body>
+  <h2>STOMP Test Client</h2>
+  <div>
+    <label>Your User ID: <input id="userId" value="1" /></label>
+    <button id="connectBtn">Connect</button>
+    <button id="disconnectBtn" disabled>Disconnect</button>
+  </div>
+
+  <h3>Connection</h3>
+  <div id="status">Disconnected</div>
+
+  <h3>Messages</h3>
+  <div id="messages"></div>
+
+  <h3>Send</h3>
+  <div>
+    <label>To (receiverId): <input id="toId" value="2" /></label>
+    <br/>
+    <label>Message: <input id="messageText" value="Hello from test client" size="60"/></label>
+    <br/>
+    <button id="sendBtn" disabled>Send</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <script>
+    // Adjust the endpoint if your server exposes a different STOMP URL (e.g. /ws)
+    const stompEndpoint = '/ws';
+
+    let stompClient = null;
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const sendBtn = document.getElementById('sendBtn');
+
+    function logMessage(text, cls) {
+      const el = document.createElement('div');
+      el.className = 'msg ' + (cls || '');
+      el.innerHTML = text;
+      document.getElementById('messages').appendChild(el);
+      el.scrollIntoView();
+    }
+
+    connectBtn.addEventListener('click', () => {
+      const userId = document.getElementById('userId').value.trim();
+      if (!userId) return alert('Enter user id');
+
+      const socket = new SockJS(stompEndpoint);
+      stompClient = Stomp.over(socket);
+      stompClient.debug = (msg) => { console.log(msg); };
+
+      stompClient.connect({}, function(frame) {
+        document.getElementById('status').innerText = 'Connected as ' + userId;
+        connectBtn.disabled = true;
+        disconnectBtn.disabled = false;
+        sendBtn.disabled = false;
+
+        // Subscribe to user queues for messages and status
+        stompClient.subscribe('/user/' + userId + '/queue/messages', function(payload) {
+          const body = JSON.parse(payload.body || payload);
+          logMessage('<strong>Message received</strong>: ' + (body.content || body.messageText || JSON.stringify(body)) + '<div class="meta">from: ' + body.senderId + ' id:' + (body.messageId||'') + '</div>');
+
+          // Auto-ACK: send deliver frame back to server
+          const deliverPayload = { messageId: body.messageId, receiverId: parseInt(userId) };
+          stompClient.send('/app/deliver', {}, JSON.stringify(deliverPayload));
+          logMessage('<em>Sent deliver ACK for message ' + (body.messageId||'') + '</em>');
+        });
+
+        stompClient.subscribe('/user/' + userId + '/queue/status', function(payload) {
+          const body = JSON.parse(payload.body || payload);
+          logMessage('<strong>Status update</strong>: ' + JSON.stringify(body));
+        });
+
+        // Also subscribe to public topic (optional)
+        stompClient.subscribe('/topic/public', function(payload) {
+          try { const body = JSON.parse(payload.body || payload); logMessage('<strong>Public</strong>: ' + JSON.stringify(body)); } catch(e) { logMessage('<strong>Public</strong>: ' + payload.body); }
+        });
+
+        // publish presence online
+        stompClient.send('/app/presence', {}, JSON.stringify({ userId: parseInt(userId), online: true }));
+      }, function(error) {
+        document.getElementById('status').innerText = 'Connection error';
+        console.error('STOMP connect error', error);
+        alert('STOMP connection failed. See console.');
+      });
+    });
+
+    disconnectBtn.addEventListener('click', () => {
+      if (stompClient) stompClient.disconnect(() => { document.getElementById('status').innerText = 'Disconnected'; });
+      connectBtn.disabled = false;
+      disconnectBtn.disabled = true;
+      sendBtn.disabled = true;
+    });
+
+    sendBtn.addEventListener('click', () => {
+      const senderId = parseInt(document.getElementById('userId').value);
+      const receiverId = parseInt(document.getElementById('toId').value);
+      const messageText = document.getElementById('messageText').value;
+
+      const payload = {
+        senderId: senderId,
+        receiverId: receiverId,
+        messageText: messageText
+      };
+
+      // Send to server STOMP mapping /app/send
+      stompClient.send('/app/send', {}, JSON.stringify(payload));
+      logMessage('<em>Sent message to /app/send</em>');
+    });
+  </script>
+</body>
+</html>
