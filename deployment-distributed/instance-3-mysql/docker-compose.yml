@@ -1,0 +1,143 @@
+# ===================================================================
+# DOCKER COMPOSE - INSTANCE 3: MYSQL DATABASE
+# AWS Lightsail Instance: 1GB RAM
+# Static IP: 3.147.141.101
+# Service: MySQL 8.0 (Port 3306)
+# ===================================================================
+
+version: '3.8'
+
+services:
+  # ===== MYSQL DATABASE =====
+  mysql:
+    image: mysql:8.0
+    container_name: chat-mysql
+    hostname: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      # Root credentials (for admin access)
+      - MYSQL_ROOT_PASSWORD=rootpass123
+      
+      # Application database and user
+      - MYSQL_DATABASE=chatdb
+      - MYSQL_USER=chatuser
+      - MYSQL_PASSWORD=chatpass123
+      
+      # MySQL Performance Tuning for 1GB instance
+      - MYSQL_INNODB_BUFFER_POOL_SIZE=256M
+      - MYSQL_MAX_CONNECTIONS=50
+    volumes:
+      # Persistent data storage
+      - mysql-data:/var/lib/mysql
+      
+      # Custom MySQL configuration (optional)
+      - ./mysql-config/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
+      
+      # Initialization scripts (optional)
+      - ../../mysql-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - chat-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "chatuser", "-pchatpass123"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=50
+      - --innodb-buffer-pool-size=256M
+
+volumes:
+  mysql-data:
+    driver: local
+
+networks:
+  chat-network:
+    driver: bridge
+
+# ===================================================================
+# DEPLOYMENT NOTES:
+# ===================================================================
+# 1. Start MySQL:
+#    docker-compose up -d
+#
+# 2. Check logs:
+#    docker-compose logs -f mysql
+#
+# 3. Verify database created:
+#    docker-compose exec mysql mysql -u chatuser -pchatpass123 -e "SHOW DATABASES;"
+#
+# 4. Connect from host:
+#    mysql -h 3.147.141.101 -u chatuser -pchatpass123 chatdb
+#
+# 5. Backup database:
+#    docker-compose exec mysql mysqldump -u chatuser -pchatpass123 chatdb > backup.sql
+#
+# 6. Restore database:
+#    docker-compose exec -T mysql mysql -u chatuser -pchatpass123 chatdb < backup.sql
+#
+# ===================================================================
+# FIREWALL CONFIGURATION (AWS Lightsail):
+# ===================================================================
+# Open port 3306 ONLY to these IPs:
+# - 35.153.96.103 (User + Message Services instance)
+#
+# DO NOT open MySQL to 0.0.0.0/0 (public internet) for security
+#
+# Custom Firewall Rule:
+# Protocol: TCP
+# Port: 3306
+# Source: 35.153.96.103/32
+#
+# ===================================================================
+# PERFORMANCE TUNING FOR 1GB INSTANCE:
+# ===================================================================
+# Current settings are optimized for 1GB RAM:
+# - innodb_buffer_pool_size: 256M (25% of RAM)
+# - max_connections: 50 (conservative limit)
+#
+# If you need to tune further, create mysql-config/my.cnf:
+#
+# [mysqld]
+# innodb_buffer_pool_size = 256M
+# max_connections = 50
+# innodb_log_file_size = 64M
+# query_cache_size = 0
+# innodb_flush_log_at_trx_commit = 2
+#
+# ===================================================================
+# MONITORING:
+# ===================================================================
+# Check MySQL status:
+#    docker-compose exec mysql mysql -u root -prootpass123 -e "SHOW GLOBAL STATUS LIKE '%connection%';"
+#
+# Check table sizes:
+#    docker-compose exec mysql mysql -u chatuser -pchatpass123 chatdb -e "
+#      SELECT table_name, 
+#             ROUND(((data_length + index_length) / 1024 / 1024), 2) AS 'Size (MB)'
+#      FROM information_schema.TABLES 
+#      WHERE table_schema = 'chatdb';"
+#
+# ===================================================================
+# DATA PERSISTENCE:
+# ===================================================================
+# MySQL data is stored in named volume: mysql-data
+# Data survives container restarts and updates
+#
+# To backup volume:
+#    docker run --rm -v mysql-data:/data -v $(pwd):/backup alpine tar czf /backup/mysql-backup.tar.gz /data
+#
+# To restore volume:
+#    docker run --rm -v mysql-data:/data -v $(pwd):/backup alpine tar xzf /backup/mysql-backup.tar.gz -C /
+#
+# ===================================================================
+# DNS MIGRATION (Future):
+# ===================================================================
+# After setting up DNS:
+# - Register A record: mysql.yourdomain.com -> 3.147.141.101
+# - Update all services to use: mysql.yourdomain.com:3306
+# ===================================================================

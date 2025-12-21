@@ -1,0 +1,7 @@
+# Simple Dockerfile for user-service using pre-built JAR
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY target/*.jar app.jar
+ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC"
+EXPOSE 8081
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

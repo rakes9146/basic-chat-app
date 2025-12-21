@@ -1,0 +1,121 @@
+# ===================================================================
+# DOCKER COMPOSE - INSTANCE 1: EUREKA + API GATEWAY
+# AWS Lightsail Instance: 1GB RAM
+# Static IP: 54.217.247.163
+# Services: Eureka Server (8761), API Gateway (8082)
+# ===================================================================
+
+version: '3.8'
+
+services:
+  # ===== EUREKA SERVER =====
+  eureka:
+    image: rakes9146/chat-eureka:distributed
+    container_name: chat-eureka
+    hostname: eureka
+    ports:
+      - "8761:8761"
+    environment:
+      # Eureka Configuration
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_INSTANCE_HOSTNAME=54.217.247.163
+      - EUREKA_CLIENT_REGISTER_WITH_EUREKA=false
+      - EUREKA_CLIENT_FETCH_REGISTRY=false
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://54.217.247.163:8761/eureka/
+      
+      # JVM Settings (can override Dockerfile defaults)
+      - JAVA_OPTS=-Xmx256m -Xms128m -XX:+UseG1GC
+    networks:
+      - chat-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ===== API GATEWAY =====
+  gateway:
+    image: rakes9146/chat-api-gateway:distributed
+    container_name: chat-gateway
+    hostname: gateway
+    ports:
+      - "8082:8082"
+    environment:
+      # Eureka Client Configuration
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://eureka:8761/eureka/
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=false
+      - EUREKA_INSTANCE_HOSTNAME=54.217.247.163
+      
+      # Gateway Routes Configuration
+      - USER_SERVICE_URL=http://35.153.96.103:8081
+      - MESSAGE_SERVICE_URL=http://35.153.96.103:8083
+      
+      # CORS Configuration
+      - CORS_ALLOWED_ORIGINS=http://54.154.129.84,http://localhost:4200
+      
+      # JVM Settings
+      - JAVA_OPTS=-Xmx256m -Xms128m -XX:+UseG1GC
+    networks:
+      - chat-network
+    depends_on:
+      eureka:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+networks:
+  chat-network:
+    driver: bridge
+
+# ===================================================================
+# DEPLOYMENT NOTES:
+# ===================================================================
+# 1. Build images locally or on this instance:
+#    docker-compose build
+#
+# 2. Push to Docker Hub (optional):
+#    docker-compose push
+#
+# 3. Start services:
+#    docker-compose up -d
+#
+# 4. Check logs:
+#    docker-compose logs -f
+#
+# 5. Verify Eureka Dashboard:
+#    http://54.217.247.163:8761
+#
+# 6. Test API Gateway:
+#    curl http://54.217.247.163:8082/actuator/health
+#
+# ===================================================================
+# FIREWALL CONFIGURATION (AWS Lightsail):
+# ===================================================================
+# Open these ports in Lightsail Networking tab:
+# - 8761 (Eureka Dashboard - Optional, for monitoring)
+# - 8082 (API Gateway - Required, public access)
+#
+# ===================================================================
+# DNS MIGRATION (Future):
+# ===================================================================
+# Replace Static IPs with DNS names:
+# - EUREKA_INSTANCE_HOSTNAME=eureka.yourdomain.com
+# - USER_SERVICE_URL=http://services.yourdomain.com:8081
+# - MESSAGE_SERVICE_URL=http://services.yourdomain.com:8083
+# - CORS_ALLOWED_ORIGINS=http://chat.yourdomain.com
+#
+# ===================================================================
+# HTTPS SETUP (Future with Nginx):
+# ===================================================================
+# 1. Add Nginx reverse proxy service
+# 2. Install Certbot for Let's Encrypt SSL
+# 3. Update CORS_ALLOWED_ORIGINS to https://
+# ===================================================================

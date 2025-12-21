@@ -1,0 +1,109 @@
+# ===================================================================
+# AWS LIGHTSAIL FIREWALL RULES - SECURITY CONFIGURATION
+# ===================================================================
+# Copy these rules to each instance's Networking > Firewall configuration
+# ===================================================================
+
+# ===================================================================
+# INSTANCE 1: EUREKA + API GATEWAY (54.217.247.163)
+# ===================================================================
+# Port 22 (SSH)
+# Protocol: TCP
+# Source: Your IP only (for security)
+
+# Port 8761 (Eureka Dashboard - Optional, for monitoring)
+# Protocol: TCP
+# Source: 0.0.0.0/0 (public) OR restrict to your IP
+
+# Port 8082 (API Gateway - Public)
+# Protocol: TCP
+# Source: 0.0.0.0/0 (allows frontend and external clients)
+
+# ===================================================================
+# INSTANCE 2: USER + MESSAGE SERVICES (35.153.96.103)
+# ===================================================================
+# Port 22 (SSH)
+# Protocol: TCP
+# Source: Your IP only
+
+# Port 8081 (User Service - Internal)
+# Protocol: TCP
+# Source: 54.217.247.163/32 (API Gateway only)
+
+# Port 8083 (Message Service - Internal + WebSocket)
+# Protocol: TCP
+# Source: 54.217.247.163/32 (API Gateway)
+# Source: 54.154.129.84/32 (Frontend for WebSocket)
+
+# ===================================================================
+# INSTANCE 3: MYSQL (3.147.141.101)
+# ===================================================================
+# Port 22 (SSH)
+# Protocol: TCP
+# Source: Your IP only
+
+# Port 3306 (MySQL - Internal Only)
+# Protocol: TCP
+# Source: 35.153.96.103/32 (User + Message Services only)
+# ⚠️ NEVER open to 0.0.0.0/0 - Security Risk!
+
+# ===================================================================
+# INSTANCE 4: KAFKA (3.147.109.193)
+# ===================================================================
+# Port 22 (SSH)
+# Protocol: TCP
+# Source: Your IP only
+
+# Port 9092 (Kafka - Internal Only)
+# Protocol: TCP
+# Source: 35.153.96.103/32 (Message Service only)
+# ⚠️ NEVER open to 0.0.0.0/0 - Security Risk!
+
+# Port 9093 (Kafka Controller - Internal Only)
+# Protocol: TCP
+# Source: 127.0.0.1/32 (localhost only, do not expose)
+
+# ===================================================================
+# INSTANCE 5: REDIS (98.89.238.241)
+# ===================================================================
+# Port 22 (SSH)
+# Protocol: TCP
+# Source: Your IP only
+
+# Port 6379 (Redis - Internal Only)
+# Protocol: TCP
+# Source: 35.153.96.103/32 (Message Service only)
+# ⚠️ NEVER open to 0.0.0.0/0 - Security Risk!
+
+# ===================================================================
+# INSTANCE 6: FRONTEND (54.154.129.84)
+# ===================================================================
+# Port 22 (SSH)
+# Protocol: TCP
+# Source: Your IP only
+
+# Port 80 (HTTP - Public)
+# Protocol: TCP
+# Source: 0.0.0.0/0 (public internet)
+
+# Port 443 (HTTPS - Public, after SSL setup)
+# Protocol: TCP
+# Source: 0.0.0.0/0 (public internet)
+
+# ===================================================================
+# SECURITY BEST PRACTICES:
+# ===================================================================
+# ✅ Always keep SSH (22) restricted to your IP
+# ✅ Only expose services that need public access (80, 443, 8082)
+# ✅ Keep databases and message brokers internal (MySQL, Kafka, Redis)
+# ✅ Use instance-to-instance communication via static IPs
+# ✅ Regularly update security groups as architecture evolves
+# ✅ Consider VPN or VPC peering for enhanced security
+# ✅ Enable AWS CloudWatch for monitoring and alerts
+#
+# ❌ NEVER expose MySQL (3306) to public internet
+# ❌ NEVER expose Kafka (9092) to public internet
+# ❌ NEVER expose Redis (6379) to public internet
+# ❌ Avoid using 0.0.0.0/0 for internal services
+#
+# ===================================================================

@@ -1,0 +1,183 @@
+# ===================================================================
+# DOCKER COMPOSE - INSTANCE 5: REDIS CACHE
+# AWS Lightsail Instance: 512MB RAM
+# Static IP: 98.89.238.241
+# Service: Redis 7 (Port 6379)
+# ===================================================================
+
+version: '3.8'
+
+services:
+  # ===== REDIS CACHE =====
+  redis:
+    image: redis:7-alpine
+    container_name: chat-redis
+    hostname: redis
+    ports:
+      - "6379:6379"
+    environment:
+      # Redis Configuration
+      - REDIS_MAXMEMORY=256mb
+      - REDIS_MAXMEMORY_POLICY=allkeys-lru
+    volumes:
+      # Persistent data storage (optional for presence data)
+      - redis-data:/data
+      
+      # Custom Redis configuration (optional)
+      - ./redis-config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - chat-network
+    restart: unless-stopped
+    command: 
+      - redis-server
+      - --maxmemory 256mb
+      - --maxmemory-policy allkeys-lru
+      - --appendonly yes
+      - --appendfsync everysec
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  chat-network:
+    driver: bridge
+
+# ===================================================================
+# DEPLOYMENT NOTES:
+# ===================================================================
+# 1. Start Redis:
+#    docker-compose up -d
+#
+# 2. Check logs:
+#    docker-compose logs -f redis
+#
+# 3. Test connection:
+#    docker-compose exec redis redis-cli ping
+#
+# 4. Check keys (presence tracking):
+#    docker-compose exec redis redis-cli KEYS "presence:*"
+#
+# 5. Get user status:
+#    docker-compose exec redis redis-cli GET "presence:user:1"
+#
+# 6. Monitor real-time operations:
+#    docker-compose exec redis redis-cli MONITOR
+#
+# 7. Get Redis info:
+#    docker-compose exec redis redis-cli INFO
+#
+# ===================================================================
+# FIREWALL CONFIGURATION (AWS Lightsail):
+# ===================================================================
+# Open port 6379 ONLY to these IPs:
+# - 35.153.96.103 (User + Message Services instance)
+#
+# DO NOT open Redis to public internet for security
+#
+# Custom Firewall Rule:
+# Protocol: TCP
+# Port: 6379
+# Source: 35.153.96.103/32
+#
+# ===================================================================
+# REDIS USAGE IN APPLICATION:
+# ===================================================================
+# Redis stores user presence status (online/offline):
+#
+# Key Pattern: presence:user:{userId}
+# Values: "online" or "offline"
+# Example: presence:user:123 = "online"
+#
+# Used by Message Service (PresenseService.java):
+# - setOnline(userId) - Mark user as online
+# - setOffline(userId) - Mark user as offline
+# - isOnline(userId) - Check if user is online
+#
+# ===================================================================
+# MEMORY CONFIGURATION (512MB Instance):
+# ===================================================================
+# Current settings:
+# - maxmemory: 256MB (50% of RAM, safe allocation)
+# - maxmemory-policy: allkeys-lru (evict least recently used)
+# - appendonly: yes (persistence enabled)
+# - appendfsync: everysec (write to disk every second)
+#
+# LRU ensures old presence data is evicted when memory full
+#
+# ===================================================================
+# MONITORING:
+# ===================================================================
+# Check memory usage:
+#    docker-compose exec redis redis-cli INFO memory
+#
+# Check connected clients:
+#    docker-compose exec redis redis-cli CLIENT LIST
+#
+# Check number of keys:
+#    docker-compose exec redis redis-cli DBSIZE
+#
+# Check slowlog (slow queries):
+#    docker-compose exec redis redis-cli SLOWLOG GET 10
+#
+# ===================================================================
+# DATA PERSISTENCE:
+# ===================================================================
+# Redis persistence enabled (AOF - Append Only File):
+# - Data survives container restarts
+# - Writes synchronized every second
+# - Trade-off: Performance vs durability
+#
+# Backup Redis data:
+#    docker-compose exec redis redis-cli BGSAVE
+#    docker run --rm -v redis-data:/data -v $(pwd):/backup alpine tar czf /backup/redis-backup.tar.gz /data
+#
+# Restore Redis data:
+#    docker run --rm -v redis-data:/data -v $(pwd):/backup alpine tar xzf /backup/redis-backup.tar.gz -C /
+#
+# ===================================================================
+# TROUBLESHOOTING:
+# ===================================================================
+# Connection refused from Message Service:
+# 1. Check firewall allows 35.153.96.103
+# 2. Test: redis-cli -h 98.89.238.241 ping
+# 3. Check logs: docker-compose logs redis
+#
+# Memory issues:
+# 1. Check: docker-compose exec redis redis-cli INFO memory
+# 2. If maxmemory_reached, LRU will evict old keys automatically
+# 3. Consider increasing maxmemory if needed
+#
+# Data not persisting:
+# 1. Verify AOF enabled: appendonly yes
+# 2. Check volume: docker volume inspect redis-data
+#
+# ===================================================================
+# OPTIONAL: Custom redis.conf
+# ===================================================================
+# Create redis-config/redis.conf for advanced tuning:
+#
+# maxmemory 256mb
+# maxmemory-policy allkeys-lru
+# appendonly yes
+# appendfsync everysec
+# save 900 1
+# save 300 10
+# save 60 10000
+# tcp-backlog 511
+# timeout 0
+# tcp-keepalive 300
+#
+# ===================================================================
+# DNS MIGRATION (Future):
+# ===================================================================
+# After setting up DNS:
+# - Register A record: redis.yourdomain.com -> 98.89.238.241
+# - Update all services: SPRING_REDIS_HOST=redis.yourdomain.com
+# ===================================================================

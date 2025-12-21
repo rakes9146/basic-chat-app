@@ -1,0 +1,161 @@
+# ===================================================================
+# DOCKER COMPOSE - INSTANCE 2: USER + MESSAGE SERVICES
+# AWS Lightsail Instance: 2GB RAM
+# Static IP: 35.153.96.103
+# Services: User Service (8081), Message Service (8083)
+# ===================================================================
+
+version: '3.8'
+
+services:
+  # ===== USER SERVICE =====
+  user-service:
+    image: rakes9146/chat-user-service:distributed
+    container_name: chat-user-service
+    hostname: user-service
+    ports:
+      - "8081:8081"
+    environment:
+      # Spring Profile
+      - SPRING_PROFILES_ACTIVE=docker
+      
+      # Eureka Client Configuration
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://54.217.247.163:8761/eureka/
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=false
+      - EUREKA_INSTANCE_HOSTNAME=35.153.96.103
+      - EUREKA_INSTANCE_INSTANCE_ID=user-service:8081
+      
+      # MySQL Configuration
+      - SPRING_DATASOURCE_URL=jdbc:mysql://3.147.141.101:3306/chatdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=chatuser
+      - SPRING_DATASOURCE_PASSWORD=chatpass123
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      
+      # Redis Configuration (Optional - if user service uses caching)
+      - SPRING_REDIS_HOST=98.89.238.241
+      - SPRING_REDIS_PORT=6379
+      
+      # Server Port
+      - SERVER_PORT=8081
+      
+      # JVM Settings
+      - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    networks:
+      - chat-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # ===== MESSAGE SERVICE =====
+  message-service:
+    image: rakes9146/chat-message-service:distributed
+    container_name: chat-message-service
+    hostname: message-service
+    ports:
+      - "8083:8083"
+    environment:
+      # Spring Profile
+      - SPRING_PROFILES_ACTIVE=docker
+      
+      # Eureka Client Configuration
+      - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://54.217.247.163:8761/eureka/
+      - EUREKA_INSTANCE_PREFER_IP_ADDRESS=false
+      - EUREKA_INSTANCE_HOSTNAME=35.153.96.103
+      - EUREKA_INSTANCE_INSTANCE_ID=message-service:8083
+      
+      # MySQL Configuration
+      - SPRING_DATASOURCE_URL=jdbc:mysql://3.147.141.101:3306/chatdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=chatuser
+      - SPRING_DATASOURCE_PASSWORD=chatpass123
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      
+      # Kafka Configuration
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=3.147.109.193:9092
+      - SPRING_KAFKA_CONSUMER_GROUP_ID=chat-group
+      - SPRING_KAFKA_CONSUMER_AUTO_OFFSET_RESET=earliest
+      
+      # Redis Configuration (For presence tracking)
+      - SPRING_REDIS_HOST=98.89.238.241
+      - SPRING_REDIS_PORT=6379
+      
+      # WebSocket Configuration
+      - WEBSOCKET_ALLOWED_ORIGINS=http://54.154.129.84,http://localhost:4200
+      
+      # Server Port
+      - SERVER_PORT=8083
+      
+      # JVM Settings
+      - JAVA_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    networks:
+      - chat-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+networks:
+  chat-network:
+    driver: bridge
+
+# ===================================================================
+# DEPLOYMENT NOTES:
+# ===================================================================
+# 1. Ensure MySQL, Kafka, Redis instances are running first
+#
+# 2. Build images:
+#    docker-compose build
+#
+# 3. Push to Docker Hub (optional):
+#    docker-compose push
+#
+# 4. Start services:
+#    docker-compose up -d
+#
+# 5. Check logs:
+#    docker-compose logs -f user-service
+#    docker-compose logs -f message-service
+#
+# 6. Verify service registration in Eureka:
+#    http://54.217.247.163:8761
+#
+# ===================================================================
+# FIREWALL CONFIGURATION (AWS Lightsail):
+# ===================================================================
+# Open these ports:
+# - 8081 (User Service - Internal, only from Gateway IP: 54.217.247.163)
+# - 8083 (Message Service - Internal, only from Gateway IP: 54.217.247.163)
+#
+# Security: Restrict to Gateway IP only using Lightsail firewall rules
+#
+# ===================================================================
+# EXTERNAL DEPENDENCIES:
+# ===================================================================
+# Before starting these services, ensure:
+# 1. MySQL (3.147.141.101:3306) is accessible
+#    Test: mysql -h 3.147.141.101 -u chatuser -p
+#
+# 2. Kafka (3.147.109.193:9092) is accessible
+#    Test: telnet 3.147.109.193 9092
+#
+# 3. Redis (98.89.238.241:6379) is accessible
+#    Test: redis-cli -h 98.89.238.241 ping
+#
+# 4. Eureka (54.217.247.163:8761) is running
+#    Test: curl http://54.217.247.163:8761/actuator/health
+#
+# ===================================================================
+# DNS MIGRATION (Future):
+# ===================================================================
+# Replace Static IPs with DNS:
+# - SPRING_DATASOURCE_URL=jdbc:mysql://mysql.yourdomain.com:3306/chatdb
+# - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka.yourdomain.com:9092
+# - SPRING_REDIS_HOST=redis.yourdomain.com
+# - EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE=http://eureka.yourdomain.com:8761/eureka/
+# ===================================================================
