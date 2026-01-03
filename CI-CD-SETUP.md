@@ -18,13 +18,14 @@
 ## 🎯 Overview
 
 ### What This Pipeline Does:
-1. **Builds** all Docker images from source code
-2. **Pushes** images to Docker Hub with version tags
-3. **Deploys** to 3 Lightsail instances in sequence:
+1. **Triggers automatically** when you push code to `main` branch
+2. **Builds** all Docker images from source code
+3. **Pushes** images to Docker Hub with version tags
+4. **Deploys** to 3 Lightsail instances in sequence:
    - Instance 1: Eureka + API Gateway
    - Instance 2: User + Message Services
    - Instance 6: Frontend
-4. **Verifies** each service is healthy after deployment
+5. **Verifies** each service is healthy after deployment
 
 ### What It Doesn't Touch:
 - ❌ MySQL (Instance 3) - Infrastructure service
@@ -44,12 +45,18 @@
 - Access token created (for CI/CD)
 
 ### 3. AWS Lightsail Instances (Already Running)
+
+**Ireland Region (eu-west-1):**
 - Instance 1: 54.217.247.163 (Eureka + Gateway)
+- Instance 6: 54.154.129.84 (Frontend)
+
+**Virginia Region (us-east-1):**
 - Instance 2: 35.153.96.103 (User + Message)
+
+**Infrastructure (Not deployed via CI/CD):**
 - Instance 3: 3.147.141.101 (MySQL)
 - Instance 4: 3.147.109.193 (Kafka)
 - Instance 5: 98.89.238.241 (Redis)
-- Instance 6: 54.154.129.84 (Frontend)
 
 ---
 
@@ -78,22 +85,38 @@ rakes9146
 4. Access permissions: **Read, Write, Delete**
 5. Copy the token (you won't see it again!)
 
-#### **LIGHTSAIL_SSH_KEY**
+#### **LIGHTSAIL_SSH_KEY_EU_WEST_1**
 ```
-<your-lightsail-private-key>
+<your-ireland-lightsail-private-key>
 ```
 
-**How to get Lightsail SSH Key:**
+**How to get:**
 1. Go to AWS Lightsail Console
-2. Account → SSH Keys
-3. Download your default key (e.g., `LightsailDefaultKey-us-east-1.pem`)
-4. Open the file in a text editor
-5. Copy the ENTIRE content including:
+2. Select **Ireland (eu-west-1)** region
+3. Account → SSH Keys
+4. Download key (e.g., `LightsailDefaultKey-eu-west-1.pem`)
+5. Copy ENTIRE content including:
    ```
    -----BEGIN RSA PRIVATE KEY-----
    ...
    -----END RSA PRIVATE KEY-----
    ```
+
+#### **LIGHTSAIL_SSH_KEY_US_EAST_1**
+```
+<your-virginia-lightsail-private-key>
+```
+
+**How to get:**
+1. Go to AWS Lightsail Console
+2. Select **Virginia (us-east-1)** region
+3. Account → SSH Keys
+4. Download key (e.g., `LightsailDefaultKey-us-east-1.pem`)
+5. Copy ENTIRE content
+
+**⚠️ IMPORTANT**: You need TWO SSH keys because your instances span multiple regions:
+- Ireland key: For Instance 1 & 6
+- Virginia key: For Instance 2
 
 #### **INSTANCE_1_IP**
 ```
@@ -101,11 +124,14 @@ rakes9146
 ```
 
 #### **INSTANCE_2_IP**
-```
-35.153.96.103
+```_EU_WEST_1
+✅ LIGHTSAIL_SSH_KEY_US_EAST_1
+✅ INSTANCE_1_IP
+✅ INSTANCE_2_IP
+✅ INSTANCE_6_IP
 ```
 
-#### **INSTANCE_6_IP**
+**Total: 7 secrets (2 SSH keys for 2 regions)**# **INSTANCE_6_IP**
 ```
 54.154.129.84
 ```
@@ -131,14 +157,14 @@ For each instance (1, 2, and 6), you need to:
 
 #### Connect to Instance:
 ```bash
-# For Instance 1
-ssh -i "LightsailDefaultKey-us-east-1.pem" ubuntu@54.217.247.163
+# For Instance 1 (Ireland)
+ssh -i "LightsailDefaultKey-eu-west-1.pem" ubuntu@54.217.247.163
 
-# For Instance 2
+# For Instance 2 (Virginia)
 ssh -i "LightsailDefaultKey-us-east-1.pem" ubuntu@35.153.96.103
 
-# For Instance 6
-ssh -i "LightsailDefaultKey-us-east-1.pem" ubuntu@54.154.129.84
+# For Instance 6 (Ireland)
+ssh -i "LightsailDefaultKey-eu-west-1.pem" ubuntu@54.154.129.84
 ```
 
 ### 2.2 Create Deployment Directory Structure
@@ -191,16 +217,16 @@ You need to copy these files to each instance:
 # From your local machine:
 cd "C:\Rakesh New\spring learning\Mentoring Course\Chat Application\chat project\basic-chat-app"
 
-# Copy docker-compose.yml
-scp -i "LightsailDefaultKey-us-east-1.pem" deployment-distributed/instance-1-eureka-gateway/docker-compose.yml ubuntu@54.217.247.163:~/deployment/instance-1-eureka-gateway/
+# Copy docker-compose.yml (Ireland)
+scp -i "LightsailDefaultKey-eu-west-1.pem" deployment-distributed/instance-1-eureka-gateway/docker-compose.yml ubuntu@54.217.247.163:~/deployment/instance-1-eureka-gateway/
 
 # Copy .env file (if you have one)
-scp -i "LightsailDefaultKey-us-east-1.pem" deployment-distributed/instance-1-eureka-gateway/.env ubuntu@54.217.247.163:~/deployment/instance-1-eureka-gateway/
+scp -i "LightsailDefaultKey-eu-west-1.pem" deployment-distributed/instance-1-eureka-gateway/.env ubuntu@54.217.247.163:~/deployment/instance-1-eureka-gateway/
 ```
 
 #### **Instance 2 files:**
 ```bash
-# Copy docker-compose.yml
+# Copy docker-compose.yml (Virginia)
 scp -i "LightsailDefaultKey-us-east-1.pem" deployment-distributed/instance-2-user-message-services/docker-compose.yml ubuntu@35.153.96.103:~/deployment/instance-2-user-message-services/
 
 # Copy .env file (if you have one)
@@ -209,11 +235,11 @@ scp -i "LightsailDefaultKey-us-east-1.pem" deployment-distributed/instance-2-use
 
 #### **Instance 6 files:**
 ```bash
-# Copy docker-compose.yml
-scp -i "LightsailDefaultKey-us-east-1.pem" deployment-distributed/instance-6-frontend/docker-compose.yml ubuntu@54.154.129.84:~/deployment/instance-6-frontend/
+# Copy docker-compose.yml (Ireland)
+scp -i "LightsailDefaultKey-eu-west-1.pem" deployment-distributed/instance-6-frontend/docker-compose.yml ubuntu@54.154.129.84:~/deployment/instance-6-frontend/
 
 # Copy .env file (if you have one)
-scp -i "LightsailDefaultKey-us-east-1.pem" deployment-distributed/instance-6-frontend/.env ubuntu@54.154.129.84:~/deployment/instance-6-frontend/
+scp -i "LightsailDefaultKey-eu-west-1.pem" deployment-distributed/instance-6-frontend/.env ubuntu@54.154.129.84:~/deployment/instance-6-frontend/
 ```
 
 ### 2.4 Verify Setup on Each Instance
@@ -234,27 +260,39 @@ docker-compose --version
 
 ---
 
-## 🚀 Step 3: Running Your First Deployment
+## 🚀 StAutomatic Deployment (Recommended)
 
-### 3.1 Manual Deployment via GitHub Actions
+**Simply push your code to main branch:**
 
-1. **Go to GitHub Actions**:
-   ```
-   https://github.com/rakes9146/basic-chat-app/actions
-   ```
+```powershell
+git add .
+git commit -m "Your commit message"
+git push origin main
+```
 
-2. **Select "Deploy to Production" workflow** from left sidebar
+**That's it!** The deployment will:
+- ✅ Trigger automatically
+- ✅ Build all images
+- ✅ Push to Docker Hub
+- ✅ Deploy to all instances
+- ✅ Run health checks
 
-3. **Click "Run workflow" button** (top right)
+**Watch the deployment:**
+1. Go to: `https://github.com/rakes9146/basic-chat-app/actions`
+2. Click on the running workflow (top of the list)
+3. Watch each step execute in real-time
 
-4. **Fill in the form**:
-   - **Branch**: `main` (or your current branch)
-   - **Version tag**: Leave empty for commit SHA, or enter version like `v1.0.0`
+### 3.3 Manual Deployment (Optional)
 
-5. **Click green "Run workflow" button**
+If you need to deploy without pushing code:
 
-6. **Watch the deployment**:
-   - Click on the running workflow
+1. Go to: `https://github.com/rakes9146/basic-chat-app/actions`
+2. Click **"Deploy to Production"** workflow
+3. Click **"Run workflow"** button
+4. Fill in:
+   - **Branch**: `main`
+   - **Version tag**: Leave empty or enter `v1.0.0`
+5. Click **"Run workflow"**orkflow
    - Watch each job execute in real-time
    - See logs for each step
 
@@ -280,7 +318,7 @@ The workflow will:
    └─ Verify health
 
 4. Deploy Instance 2 (1-2 min)
-   ├─ SSH to Instance 2
+   ├─ 4SH to Instance 2
    ├─ Pull new images
    ├─ Restart containers
    └─ Verify health
@@ -526,14 +564,14 @@ After setup, you should be able to:
 
 ### SSH Commands
 ```bash
-# Instance 1 (Eureka + Gateway)
-ssh -i "LightsailDefaultKey-us-east-1.pem" ubuntu@54.217.247.163
+# Instance 1 (Eureka + Gateway) - Ireland
+ssh -i "LightsailDefaultKey-eu-west-1.pem" ubuntu@54.217.247.163
 
-# Instance 2 (User + Message)
+# Instance 2 (User + Message) - Virginia
 ssh -i "LightsailDefaultKey-us-east-1.pem" ubuntu@35.153.96.103
 
-# Instance 6 (Frontend)
-ssh -i "LightsailDefaultKey-us-east-1.pem" ubuntu@54.154.129.84
+# Instance 6 (Frontend) - Ireland
+ssh -i "LightsailDefaultKey-eu-west-1.pem" ubuntu@54.154.129.84
 ```
 
 ---

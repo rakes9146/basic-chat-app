@@ -1,6 +1,13 @@
 name: Deploy to Production
 
 on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
   workflow_dispatch:
     inputs:
       version:
@@ -26,10 +33,10 @@ jobs:
       - name: Set image tag
         id: set_tag
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
             echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "tag=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
           fi
 
       - name: Log in to Docker Hub
@@ -116,7 +123,7 @@ jobs:
           echo "| Frontend | \`${{ env.REGISTRY }}/chat-frontend:${{ steps.set_tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
 
   deploy-instance-1:
-    name: Deploy Instance 1 (Eureka + Gateway)
+    name: Deploy Instance 1 (Eureka + Gateway) - Ireland
     needs: build-and-push
     runs-on: ubuntu-latest
     
@@ -124,12 +131,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to Instance 1
+      - name: Deploy to Instance 1 (Ireland)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_1_IP }}
           username: ubuntu
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY_EU_WEST_1 }}
           script: |
             cd ~/deployment/instance-1-eureka-gateway
             
@@ -171,7 +178,7 @@ jobs:
           fi
 
   deploy-instance-2:
-    name: Deploy Instance 2 (User + Message Services)
+    name: Deploy Instance 2 (User + Message Services) - Virginia
     needs: deploy-instance-1
     runs-on: ubuntu-latest
     
@@ -179,12 +186,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to Instance 2
+      - name: Deploy to Instance 2 (Virginia)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_2_IP }}
           username: ubuntu
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY_US_EAST_1 }}
           script: |
             cd ~/deployment/instance-2-user-message-services
             
@@ -226,7 +233,7 @@ jobs:
           fi
 
   deploy-instance-6:
-    name: Deploy Instance 6 (Frontend)
+    name: Deploy Instance 6 (Frontend) - Ireland
     needs: deploy-instance-2
     runs-on: ubuntu-latest
     
@@ -234,12 +241,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to Instance 6
+      - name: Deploy to Instance 6 (Ireland)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_6_IP }}
           username: ubuntu
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY_EU_WEST_1 }}
           script: |
             cd ~/deployment/instance-6-frontend
             
@@ -285,11 +292,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Deployment Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Instance | Services | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Instance 1 | Eureka + Gateway | ${{ needs.deploy-instance-1.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Instance 2 | User + Message | ${{ needs.deploy-instance-2.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Instance 6 | Frontend | ${{ needs.deploy-instance-6.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance | Services | Region | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|----------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance 1 | Eureka + Gateway | 🇮🇪 Ireland (eu-west-1) | ${{ needs.deploy-instance-1.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance 2 | User + Message | 🇺🇸 Virginia (us-east-1) | ${{ needs.deploy-instance-2.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance 6 | Frontend | 🇮🇪 Ireland (eu-west-1) | ${{ needs.deploy-instance-6.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Service URLs" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

@@ -38,18 +38,18 @@ jobs:
           fi
 
   rollback-instance-1:
-    name: Rollback Instance 1 (Eureka + Gateway)
+    name: Rollback Instance 1 (Eureka + Gateway) - Ireland
     needs: validate-version
     runs-on: ubuntu-latest
     if: contains(github.event.inputs.instances, '1') || github.event.inputs.instances == 'all'
     
     steps:
-      - name: Rollback Instance 1
+      - name: Rollback Instance 1 (Ireland)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_1_IP }}
           username: ubuntu
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY_EU_WEST_1 }}
           script: |
             cd ~/deployment/instance-1-eureka-gateway
             
@@ -91,7 +91,7 @@ jobs:
           fi
 
   rollback-instance-2:
-    name: Rollback Instance 2 (User + Message Services)
+    name: Rollback Instance 2 (User + Message Services) - Virginia
     needs: [validate-version, rollback-instance-1]
     runs-on: ubuntu-latest
     if: |
@@ -100,12 +100,12 @@ jobs:
       (contains(github.event.inputs.instances, '2') || github.event.inputs.instances == 'all')
     
     steps:
-      - name: Rollback Instance 2
+      - name: Rollback Instance 2 (Virginia)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_2_IP }}
           username: ubuntu
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY_US_EAST_1 }}
           script: |
             cd ~/deployment/instance-2-user-message-services
             
@@ -147,7 +147,7 @@ jobs:
           fi
 
   rollback-instance-6:
-    name: Rollback Instance 6 (Frontend)
+    name: Rollback Instance 6 (Frontend) - Ireland
     needs: [validate-version, rollback-instance-2]
     runs-on: ubuntu-latest
     if: |
@@ -156,12 +156,12 @@ jobs:
       (contains(github.event.inputs.instances, '6') || github.event.inputs.instances == 'all')
     
     steps:
-      - name: Rollback Instance 6
+      - name: Rollback Instance 6 (Ireland)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_6_IP }}
           username: ubuntu
-          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY_EU_WEST_1 }}
           script: |
             cd ~/deployment/instance-6-frontend
             
@@ -207,17 +207,17 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Rollback Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Instance | Services | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance | Services | Region | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|----------|--------|--------|" >> $GITHUB_STEP_SUMMARY
           
           if [ "${{ needs.rollback-instance-1.result }}" != "skipped" ]; then
-            echo "| Instance 1 | Eureka + Gateway | ${{ needs.rollback-instance-1.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Instance 1 | Eureka + Gateway | 🇮🇪 Ireland | ${{ needs.rollback-instance-1.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           fi
           
           if [ "${{ needs.rollback-instance-2.result }}" != "skipped" ]; then
-            echo "| Instance 2 | User + Message | ${{ needs.rollback-instance-2.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Instance 2 | User + Message | 🇺🇸 Virginia | ${{ needs.rollback-instance-2.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           fi
           
           if [ "${{ needs.rollback-instance-6.result }}" != "skipped" ]; then
-            echo "| Instance 6 | Frontend | ${{ needs.rollback-instance-6.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Instance 6 | Frontend | 🇮🇪 Ireland | ${{ needs.rollback-instance-6.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           fi
