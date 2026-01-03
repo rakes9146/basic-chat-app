@@ -1,6 +1,7 @@
 # 🚀 CI/CD Pipeline Setup Guide
 
 ## Complete Setup Instructions for AWS Lightsail Deployment
+## Last Updated: January 4, 2026
 
 ---
 
