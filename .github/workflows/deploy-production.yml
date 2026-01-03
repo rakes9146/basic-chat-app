@@ -135,7 +135,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_1_IP }}
-          username: ubuntu
+          username: ec2-user
           key: ${{ secrets.LIGHTSAIL_SSH_KEY_EU_WEST_1 }}
           script: |
             cd ~/deployment/instance-1-eureka-gateway
@@ -190,7 +190,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_2_IP }}
-          username: ubuntu
+          username: ec2-user
           key: ${{ secrets.LIGHTSAIL_SSH_KEY_US_EAST_1 }}
           script: |
             cd ~/deployment/instance-2-user-message-services
@@ -245,7 +245,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.INSTANCE_6_IP }}
-          username: ubuntu
+          username: ec2-user
           key: ${{ secrets.LIGHTSAIL_SSH_KEY_EU_WEST_1 }}
           script: |
             cd ~/deployment/instance-6-frontend
