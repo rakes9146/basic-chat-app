@@ -1,0 +1,36 @@
+# Environment files - Keep local configs private
+.env
+.env.local
+.env.*.local
+*.env
+
+# Docker volumes
+mysql-data/
+kafka-data/
+redis-data/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# Temporary files
+tmp/
+temp/

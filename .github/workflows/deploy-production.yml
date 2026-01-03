@@ -1,0 +1,298 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0 or leave empty for commit SHA)'
+        required: false
+        default: ''
+
+env:
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  REGISTRY: rakes9146
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.set_tag.outputs.tag }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: set_tag
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Eureka Server
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployment-distributed/instance-1-eureka-gateway/Dockerfile.eureka
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/chat-eureka:${{ steps.set_tag.outputs.tag }}
+            ${{ env.REGISTRY }}/chat-eureka:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/chat-eureka:latest
+          cache-to: type=inline
+
+      - name: Build and push API Gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployment-distributed/instance-1-eureka-gateway/Dockerfile.gateway
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/chat-api-gateway:${{ steps.set_tag.outputs.tag }}
+            ${{ env.REGISTRY }}/chat-api-gateway:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/chat-api-gateway:latest
+          cache-to: type=inline
+
+      - name: Build and push User Service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployment-distributed/instance-2-user-message-services/Dockerfile.user
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/chat-user-service:${{ steps.set_tag.outputs.tag }}
+            ${{ env.REGISTRY }}/chat-user-service:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/chat-user-service:latest
+          cache-to: type=inline
+
+      - name: Build and push Message Service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./deployment-distributed/instance-2-user-message-services/Dockerfile.message
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/chat-message-service:${{ steps.set_tag.outputs.tag }}
+            ${{ env.REGISTRY }}/chat-message-service:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/chat-message-service:latest
+          cache-to: type=inline
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/chat-frontend:${{ steps.set_tag.outputs.tag }}
+            ${{ env.REGISTRY }}/chat-frontend:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/chat-frontend:latest
+          cache-to: type=inline
+
+      - name: Build Summary
+        run: |
+          echo "### 🐳 Docker Images Built and Pushed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag**: \`${{ steps.set_tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Image |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Eureka | \`${{ env.REGISTRY }}/chat-eureka:${{ steps.set_tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Gateway | \`${{ env.REGISTRY }}/chat-api-gateway:${{ steps.set_tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| User Service | \`${{ env.REGISTRY }}/chat-user-service:${{ steps.set_tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Message Service | \`${{ env.REGISTRY }}/chat-message-service:${{ steps.set_tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | \`${{ env.REGISTRY }}/chat-frontend:${{ steps.set_tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+
+  deploy-instance-1:
+    name: Deploy Instance 1 (Eureka + Gateway)
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Instance 1
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.INSTANCE_1_IP }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/deployment/instance-1-eureka-gateway
+            
+            # Pull latest images
+            docker pull ${{ env.REGISTRY }}/chat-eureka:latest
+            docker pull ${{ env.REGISTRY }}/chat-api-gateway:latest
+            
+            # Restart services
+            docker-compose down
+            docker-compose up -d
+            
+            # Wait for services to be healthy
+            echo "Waiting for services to start..."
+            sleep 30
+            
+            # Check if containers are running
+            docker-compose ps
+
+      - name: Verify Eureka Server
+        run: |
+          sleep 10
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_1_IP }}:8761/)
+          if [ "$status" -eq 200 ]; then
+            echo "✅ Eureka Server is healthy"
+          else
+            echo "❌ Eureka Server health check failed (HTTP $status)"
+            exit 1
+          fi
+
+      - name: Verify API Gateway
+        run: |
+          sleep 10
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_1_IP }}:8082/actuator/health)
+          if [ "$status" -eq 200 ]; then
+            echo "✅ API Gateway is healthy"
+          else
+            echo "❌ API Gateway health check failed (HTTP $status)"
+            exit 1
+          fi
+
+  deploy-instance-2:
+    name: Deploy Instance 2 (User + Message Services)
+    needs: deploy-instance-1
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Instance 2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.INSTANCE_2_IP }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/deployment/instance-2-user-message-services
+            
+            # Pull latest images
+            docker pull ${{ env.REGISTRY }}/chat-user-service:latest
+            docker pull ${{ env.REGISTRY }}/chat-message-service:latest
+            
+            # Restart services
+            docker-compose down
+            docker-compose up -d
+            
+            # Wait for services to start
+            echo "Waiting for services to start..."
+            sleep 40
+            
+            # Check if containers are running
+            docker-compose ps
+
+      - name: Verify User Service
+        run: |
+          sleep 15
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_2_IP }}:8081/actuator/health)
+          if [ "$status" -eq 200 ]; then
+            echo "✅ User Service is healthy"
+          else
+            echo "❌ User Service health check failed (HTTP $status)"
+            exit 1
+          fi
+
+      - name: Verify Message Service
+        run: |
+          sleep 15
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_2_IP }}:8083/actuator/health)
+          if [ "$status" -eq 200 ]; then
+            echo "✅ Message Service is healthy"
+          else
+            echo "❌ Message Service health check failed (HTTP $status)"
+            exit 1
+          fi
+
+  deploy-instance-6:
+    name: Deploy Instance 6 (Frontend)
+    needs: deploy-instance-2
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Instance 6
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.INSTANCE_6_IP }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/deployment/instance-6-frontend
+            
+            # Pull latest image
+            docker pull ${{ env.REGISTRY }}/chat-frontend:latest
+            
+            # Restart service
+            docker-compose down
+            docker-compose up -d
+            
+            # Wait for service to start
+            echo "Waiting for frontend to start..."
+            sleep 20
+            
+            # Check if container is running
+            docker-compose ps
+
+      - name: Verify Frontend
+        run: |
+          sleep 10
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_6_IP }}/)
+          if [ "$status" -eq 200 ] || [ "$status" -eq 301 ] || [ "$status" -eq 302 ]; then
+            echo "✅ Frontend is healthy"
+          else
+            echo "❌ Frontend health check failed (HTTP $status)"
+            exit 1
+          fi
+
+  deployment-summary:
+    name: Deployment Summary
+    needs: [build-and-push, deploy-instance-1, deploy-instance-2, deploy-instance-6]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Create Deployment Summary
+        run: |
+          echo "# 🚀 Production Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag**: \`${{ needs.build-and-push.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance | Services | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance 1 | Eureka + Gateway | ${{ needs.deploy-instance-1.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance 2 | User + Message | ${{ needs.deploy-instance-2.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance 6 | Frontend | ${{ needs.deploy-instance-6.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend**: http://${{ secrets.INSTANCE_6_IP }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **API Gateway**: http://${{ secrets.INSTANCE_1_IP }}:8082" >> $GITHUB_STEP_SUMMARY
+          echo "- **Eureka Dashboard**: http://${{ secrets.INSTANCE_1_IP }}:8761" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,223 @@
+name: Rollback Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to rollback to (e.g., v1.0.0 or commit SHA)'
+        required: true
+      instances:
+        description: 'Instances to rollback (comma-separated: 1,2,6 or "all")'
+        required: true
+        default: 'all'
+
+env:
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  REGISTRY: rakes9146
+
+jobs:
+  validate-version:
+    name: Validate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+    
+    steps:
+      - name: Validate version exists
+        id: validate
+        run: |
+          echo "Checking if version ${{ github.event.inputs.version }} exists in Docker Hub..."
+          
+          # Check if Eureka image exists
+          if docker manifest inspect ${{ env.REGISTRY }}/chat-eureka:${{ github.event.inputs.version }} > /dev/null 2>&1; then
+            echo "✅ Version ${{ github.event.inputs.version }} found in Docker Hub"
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Version ${{ github.event.inputs.version }} not found in Docker Hub"
+            exit 1
+          fi
+
+  rollback-instance-1:
+    name: Rollback Instance 1 (Eureka + Gateway)
+    needs: validate-version
+    runs-on: ubuntu-latest
+    if: contains(github.event.inputs.instances, '1') || github.event.inputs.instances == 'all'
+    
+    steps:
+      - name: Rollback Instance 1
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.INSTANCE_1_IP }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/deployment/instance-1-eureka-gateway
+            
+            # Pull specific version
+            docker pull ${{ env.REGISTRY }}/chat-eureka:${{ github.event.inputs.version }}
+            docker pull ${{ env.REGISTRY }}/chat-api-gateway:${{ github.event.inputs.version }}
+            
+            # Tag as latest (for docker-compose)
+            docker tag ${{ env.REGISTRY }}/chat-eureka:${{ github.event.inputs.version }} ${{ env.REGISTRY }}/chat-eureka:latest
+            docker tag ${{ env.REGISTRY }}/chat-api-gateway:${{ github.event.inputs.version }} ${{ env.REGISTRY }}/chat-api-gateway:latest
+            
+            # Restart services
+            docker-compose down
+            docker-compose up -d
+            
+            sleep 30
+            docker-compose ps
+
+      - name: Verify Services
+        run: |
+          sleep 15
+          
+          # Check Eureka
+          eureka_status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_1_IP }}:8761/)
+          if [ "$eureka_status" -eq 200 ]; then
+            echo "✅ Eureka Server rolled back successfully"
+          else
+            echo "❌ Eureka Server rollback failed"
+            exit 1
+          fi
+          
+          # Check Gateway
+          gateway_status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_1_IP }}:8082/actuator/health)
+          if [ "$gateway_status" -eq 200 ]; then
+            echo "✅ API Gateway rolled back successfully"
+          else
+            echo "❌ API Gateway rollback failed"
+            exit 1
+          fi
+
+  rollback-instance-2:
+    name: Rollback Instance 2 (User + Message Services)
+    needs: [validate-version, rollback-instance-1]
+    runs-on: ubuntu-latest
+    if: |
+      always() && 
+      (needs.rollback-instance-1.result == 'success' || needs.rollback-instance-1.result == 'skipped') &&
+      (contains(github.event.inputs.instances, '2') || github.event.inputs.instances == 'all')
+    
+    steps:
+      - name: Rollback Instance 2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.INSTANCE_2_IP }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/deployment/instance-2-user-message-services
+            
+            # Pull specific version
+            docker pull ${{ env.REGISTRY }}/chat-user-service:${{ github.event.inputs.version }}
+            docker pull ${{ env.REGISTRY }}/chat-message-service:${{ github.event.inputs.version }}
+            
+            # Tag as latest
+            docker tag ${{ env.REGISTRY }}/chat-user-service:${{ github.event.inputs.version }} ${{ env.REGISTRY }}/chat-user-service:latest
+            docker tag ${{ env.REGISTRY }}/chat-message-service:${{ github.event.inputs.version }} ${{ env.REGISTRY }}/chat-message-service:latest
+            
+            # Restart services
+            docker-compose down
+            docker-compose up -d
+            
+            sleep 40
+            docker-compose ps
+
+      - name: Verify Services
+        run: |
+          sleep 20
+          
+          # Check User Service
+          user_status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_2_IP }}:8081/actuator/health)
+          if [ "$user_status" -eq 200 ]; then
+            echo "✅ User Service rolled back successfully"
+          else
+            echo "❌ User Service rollback failed"
+            exit 1
+          fi
+          
+          # Check Message Service
+          message_status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_2_IP }}:8083/actuator/health)
+          if [ "$message_status" -eq 200 ]; then
+            echo "✅ Message Service rolled back successfully"
+          else
+            echo "❌ Message Service rollback failed"
+            exit 1
+          fi
+
+  rollback-instance-6:
+    name: Rollback Instance 6 (Frontend)
+    needs: [validate-version, rollback-instance-2]
+    runs-on: ubuntu-latest
+    if: |
+      always() && 
+      (needs.rollback-instance-2.result == 'success' || needs.rollback-instance-2.result == 'skipped') &&
+      (contains(github.event.inputs.instances, '6') || github.event.inputs.instances == 'all')
+    
+    steps:
+      - name: Rollback Instance 6
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.INSTANCE_6_IP }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd ~/deployment/instance-6-frontend
+            
+            # Pull specific version
+            docker pull ${{ env.REGISTRY }}/chat-frontend:${{ github.event.inputs.version }}
+            
+            # Tag as latest
+            docker tag ${{ env.REGISTRY }}/chat-frontend:${{ github.event.inputs.version }} ${{ env.REGISTRY }}/chat-frontend:latest
+            
+            # Restart service
+            docker-compose down
+            docker-compose up -d
+            
+            sleep 20
+            docker-compose ps
+
+      - name: Verify Frontend
+        run: |
+          sleep 10
+          status=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.INSTANCE_6_IP }}/)
+          if [ "$status" -eq 200 ] || [ "$status" -eq 301 ] || [ "$status" -eq 302 ]; then
+            echo "✅ Frontend rolled back successfully"
+          else
+            echo "❌ Frontend rollback failed"
+            exit 1
+          fi
+
+  rollback-summary:
+    name: Rollback Summary
+    needs: [validate-version, rollback-instance-1, rollback-instance-2, rollback-instance-6]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Create Rollback Summary
+        run: |
+          echo "# 🔄 Rollback Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by**: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Rolled back to**: \`${{ github.event.inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Target instances**: ${{ github.event.inputs.instances }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Rollback Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance | Services | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.rollback-instance-1.result }}" != "skipped" ]; then
+            echo "| Instance 1 | Eureka + Gateway | ${{ needs.rollback-instance-1.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.rollback-instance-2.result }}" != "skipped" ]; then
+            echo "| Instance 2 | User + Message | ${{ needs.rollback-instance-2.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ needs.rollback-instance-6.result }}" != "skipped" ]; then
+            echo "| Instance 6 | Frontend | ${{ needs.rollback-instance-6.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          fi
